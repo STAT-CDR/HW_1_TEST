@@ -1,0 +1,73 @@
+name: Autograding Tests
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  run-autograding-tests:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.head_commit.timestamp >= '2025-03-10T23:59:59Z' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1
+        run: aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID && \
+             aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY && \
+             aws configure set region $AWS_REGION
+
+      - name: Download JSON from S3
+        run: aws s3 cp s3://tu-bucket-secreto/config/tests.json tests.json
+
+      - name: Install R and dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y r-base
+          Rscript -e 'install.packages(c("testthat", "jsonlite", "stringr", "knitr", "quarto"), repos="http://cran.r-project.org")'
+
+      - name: Run R grading script
+        run: Rscript test_script.R
+
+      - name: Parse summary.json for PR comment
+        id: parse_summary
+        run: |
+          nota_total=$(jq '.nota_total' summary.json)
+          nota_maxima=$(jq '.nota_maxima' summary.json)
+          resultados=$(jq -r '.resultados | to_entries | map("- **\(.key):** \(.value.estado) (\(.value.puntos))\n  \(.value.mensaje)\n") | .[]' summary.json)
+          
+          if [[ "$nota_total" == "null" ]]; then
+            nota="Pendiente"
+          else
+            nota="${nota_total}/${nota_maxima}"
+          fi
+
+          summary_comment="### Resultados de la corrección automática:\n\n**Nota total:** $nota\n\n**Resumen por ejercicio:**\n$resultados"
+
+          echo "summary_comment=$summary_comment" >> $GITHUB_ENV
+
+      - name: Comment on Pull Request with results
+        run: |
+          pr_number=$(curl -s "https://api.github.com/repos/${{ github.repository }}/pulls?head=${{ github.actor }}:feedback" | jq '.[0].number')
+          if [ -z "$pr_number" ]; then
+            echo "No se pudo encontrar el PR de feedback."
+            exit 1
+          fi
+
+          curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -d "{\"body\": \"${{ env.summary_comment }}\"}" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/$pr_number/comments"
+
+      - name: Commit and push feedback to feedback branch
+        run: |
+          git config --global user.name "Teacher CDR"
+          git config --global user.email "github-actions@github.com"
+          git add corrected_HW1.qmd summary.json
+          git commit -m "📋 Corrección automática + revisión manual pendiente"
+          git push origin feedback --force
