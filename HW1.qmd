@@ -1,0 +1,34 @@
+---
+title: "Tarea 1"
+subtitle: "Ciencia de Datos con R"
+author: "Mauro Loprete"
+---
+
+```{r}
+library(testthat)
+```
+
+# Ejercicio 1
+
+1. Crea un vector de 10 elementos con los números del 1 al 10, asigna el vector a la variable `x`.
+
+```{r}
+#| label: ejercicio_11
+x <- 1:10
+```
+
+2. Calcula la suma de los elementos del vector `x` y asigna el resultado a la variable `suma_x`.
+
+```{r}
+#| label: ejercicio_12
+suma_x <- sum(x)
+```
+
+
+3. Calcula el promedio de los elementos del vector `x` y asigna el resultado a la variable `promedio_x`.
+
+```{r}
+#| label: ejercicio_13
+promedio_x <- mean(x)
+```
+
